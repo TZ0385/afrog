@@ -10,6 +10,7 @@ import (
 	"github.com/zan8in/afrog/v3/pkg/proto"
 	"github.com/zan8in/afrog/v3/pkg/utils"
 	"github.com/zan8in/gologger"
+	gproto "google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v2"
 )
 
@@ -32,6 +33,70 @@ type PocResult struct {
 	IsVul          bool
 	BruteTruncated bool
 	BruteRequests  int
+}
+
+func (r *Result) Snapshot() *Result {
+	if r == nil {
+		return nil
+	}
+
+	out := &Result{
+		IsVul:        r.IsVul,
+		SkipCount:    r.SkipCount,
+		Target:       r.Target,
+		FullTarget:   r.FullTarget,
+		Output:       r.Output,
+		FingerResult: r.FingerResult,
+	}
+	if r.PocInfo != nil {
+		pi := *r.PocInfo
+		out.PocInfo = &pi
+	}
+	if len(r.AllPocResult) > 0 {
+		out.AllPocResult = make([]*PocResult, 0, len(r.AllPocResult))
+		for _, pr := range r.AllPocResult {
+			out.AllPocResult = append(out.AllPocResult, pr.Snapshot())
+		}
+	}
+	if len(r.Extractor) > 0 {
+		out.Extractor = append(yaml.MapSlice(nil), r.Extractor...)
+	}
+	return out
+}
+
+func (pr *PocResult) Snapshot() *PocResult {
+	if pr == nil {
+		return nil
+	}
+
+	return &PocResult{
+		FullTarget:     pr.FullTarget,
+		ResultRequest:  cloneRequest(pr.ResultRequest),
+		ResultResponse: cloneResponse(pr.ResultResponse),
+		IsVul:          pr.IsVul,
+		BruteTruncated: pr.BruteTruncated,
+		BruteRequests:  pr.BruteRequests,
+	}
+}
+
+func cloneRequest(in *proto.Request) *proto.Request {
+	if in == nil {
+		return nil
+	}
+	if out, ok := gproto.Clone(in).(*proto.Request); ok {
+		return out
+	}
+	return nil
+}
+
+func cloneResponse(in *proto.Response) *proto.Response {
+	if in == nil {
+		return nil
+	}
+	if out, ok := gproto.Clone(in).(*proto.Response); ok {
+		return out
+	}
+	return nil
 }
 
 func (pr *PocResult) ReadFullResultRequestInfo() string {

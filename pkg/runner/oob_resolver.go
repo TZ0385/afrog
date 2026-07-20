@@ -18,6 +18,7 @@ type oobPendingEntry struct {
 	target     string
 	fulltarget string
 	poc        poc.Poc
+	snapshot   *result.Result
 }
 
 func (r *Runner) registerOOBPendings(res *result.Result, pendings []OOBPending) {
@@ -42,6 +43,7 @@ func (r *Runner) registerOOBPendings(res *result.Result, pendings []OOBPending) 
 			timeoutSec: p.TimeoutSec,
 			target:     res.Target,
 			fulltarget: res.FullTarget,
+			snapshot:   res.Snapshot(),
 		}
 		if ent.fulltarget == "" {
 			ent.fulltarget = ent.target
@@ -66,6 +68,9 @@ func (r *Runner) registerOOBPendings(res *result.Result, pendings []OOBPending) 
 			}
 			if old.poc.Id == "" && ent.poc.Id != "" {
 				old.poc = ent.poc
+			}
+			if old.snapshot == nil && ent.snapshot != nil {
+				old.snapshot = ent.snapshot
 			}
 		} else {
 			r.oobPending[key] = ent
@@ -158,15 +163,29 @@ func (r *Runner) resolveOOBPendingsOnce() int {
 			continue
 		}
 
-		pi := ent.poc
-		rst := &result.Result{
-			IsVul:      true,
-			SkipCount:  true,
-			Target:     ent.target,
-			FullTarget: ent.fulltarget,
-			PocInfo:    &pi,
-			Extractor:  yaml.MapSlice{{Key: "oob_evidence", Value: ev}},
+		rst := ent.snapshot.Snapshot()
+		if rst == nil {
+			pi := ent.poc
+			rst = &result.Result{
+				Target:     ent.target,
+				FullTarget: ent.fulltarget,
+				PocInfo:    &pi,
+			}
 		}
+		rst.IsVul = true
+		rst.SkipCount = true
+		if strings.TrimSpace(rst.Target) == "" {
+			rst.Target = ent.target
+		}
+		if strings.TrimSpace(rst.FullTarget) == "" {
+			rst.FullTarget = ent.fulltarget
+		}
+		if rst.PocInfo == nil {
+			pi := ent.poc
+			rst.PocInfo = &pi
+		}
+		rst.Extractor = upsertOOBEvidence(rst.Extractor, ev)
+		markResolvedOOBResult(rst)
 		r.OnResult(rst)
 
 		r.oobPendingMu.Lock()
@@ -176,6 +195,46 @@ func (r *Runner) resolveOOBPendingsOnce() int {
 	}
 
 	return resolved
+}
+
+func upsertOOBEvidence(extractor yaml.MapSlice, ev string) yaml.MapSlice {
+	if strings.TrimSpace(ev) == "" {
+		return extractor
+	}
+	out := append(yaml.MapSlice(nil), extractor...)
+	for i := range out {
+		k, ok := out[i].Key.(string)
+		if ok && k == "oob_evidence" {
+			out[i].Value = ev
+			return out
+		}
+	}
+	return append(out, yaml.MapItem{Key: "oob_evidence", Value: ev})
+}
+
+func markResolvedOOBResult(rst *result.Result) {
+	if rst == nil || len(rst.AllPocResult) == 0 {
+		return
+	}
+
+	for _, pr := range rst.AllPocResult {
+		if pr != nil && pr.IsVul {
+			return
+		}
+	}
+
+	last := -1
+	for i, pr := range rst.AllPocResult {
+		if pr == nil {
+			continue
+		}
+		if pr.ResultRequest != nil || pr.ResultResponse != nil || strings.TrimSpace(pr.FullTarget) != "" {
+			last = i
+		}
+	}
+	if last >= 0 {
+		rst.AllPocResult[last].IsVul = true
+	}
 }
 
 func (r *Runner) finalizeOOBPendings() {
