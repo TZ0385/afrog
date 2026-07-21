@@ -59,6 +59,7 @@ func ValidatePocFiles(target string) error {
 	// 验证每个文件
 	var hasErrors bool
 	var results []ValidationResult
+	var failedResults []ValidationResult
 
 	for _, file := range files {
 		result := validateSinglePocFile(file)
@@ -68,10 +69,7 @@ func ValidatePocFiles(target string) error {
 			fmt.Printf("✅ %s: validation passed\n", file)
 		} else {
 			hasErrors = true
-			fmt.Printf("❌ %s: validation failed\n", file)
-			for _, err := range result.Errors {
-				fmt.Printf("   %s\n", err.Error())
-			}
+			failedResults = append(failedResults, result)
 		}
 	}
 
@@ -86,10 +84,18 @@ func ValidatePocFiles(target string) error {
 			}
 		}
 
-		fmt.Printf("\n❌ Validation completed with errors:\n")
+		fmt.Printf("\n⚠️  Validation completed with errors:\n")
 		fmt.Printf("   Total files: %d\n", len(files))
 		fmt.Printf("   Passed: %d\n", passedCount)
 		fmt.Printf("   Failed: %d\n", failedCount)
+
+		fmt.Printf("\n📋 Failed PoCs:\n")
+		for _, result := range failedResults {
+			fmt.Printf("❌ %s: validation failed\n", result.File)
+			for _, err := range result.Errors {
+				fmt.Printf("   %s\n", err.Error())
+			}
+		}
 
 		return fmt.Errorf("validation failed for %d out of %d files", failedCount, len(files))
 	}
